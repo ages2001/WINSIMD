@@ -1,0 +1,9 @@
+LIBRARY ntoskrnl.exe
+EXPORTS
+DbgPrint
+ZwCreateKey
+ZwSetValueKey
+ZwClose
+RtlInitUnicodeString
+ZwOpenKey
+ZwQueryValueKey

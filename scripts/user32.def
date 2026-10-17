@@ -1,0 +1,19 @@
+LIBRARY user32.dll
+EXPORTS
+LoadCursorA
+LoadIconA
+RegisterClassA
+CreateWindowExA
+ShowWindow
+UpdateWindow
+GetMessageA
+TranslateMessage
+DispatchMessageA
+DefWindowProcA
+PostQuitMessage
+BeginPaint
+EndPaint
+MessageBoxA
+FillRect
+GetClientRect
+wsprintfA

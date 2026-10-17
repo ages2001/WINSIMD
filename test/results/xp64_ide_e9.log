@@ -1,0 +1,6 @@
+
+[E9] winsimd load
+ vendor=GenuineIntel feat=00001fff cr4=000006f8->000406f8
+ xcr0=0000000000000007 xsz=00000340
+ disp mmx=00000001 sse=00000001 avx=00000002 avx512=00000000
+ selftest=00000006 OK

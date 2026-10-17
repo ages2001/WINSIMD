@@ -1,0 +1,18 @@
+Safe-mode (AvxPolicy) verification - SIMDMT64.EXE, 6 threads, XP x64, -smp 4.
+
+AvxPolicy=0 (default, AVX enabled):
+  driver E9: safe=0  cr4 000006f8->000406f8  disp avx=2 (driver)  xcr0=7
+  probe:     AVX (YMM) - 5574 cross-thread corruption events (expected: not preserved)
+
+AvxPolicy=1 (safe mode, AVX gated):
+  driver E9: safe=1  cr4 000006f8->000006f8  disp avx=3 (blocked)  xcr0=0 (OSXSAVE off)
+  probe:     AVX gated by driver safe mode -> fell back to SSE; 0 corruption events (SAFE)
+
+Win2000 x86, AvxPolicy=1, -smp 2:
+  driver E9: safe=1  cr4 000006d0->000006d0 on cpu0 AND cpu1  disp avx=3 (blocked)
+
+Installer OS-detection (amd64, XP x64), WINSIMD.EXE /safe:
+  detected OS: Windows NT (5.2)
+    -> installing amd64 WINSIMD.SYS (kernel driver, XP x64)
+  installed service 'winsimd', start=1 (system)
+  AVX policy: SAFE (AVX gated; apps use SSE) - AvxPolicy=1

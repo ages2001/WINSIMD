@@ -1,0 +1,7 @@
+@dpsr
+[E9] winsimd.vxd load
+ vendor=GenuineIntel feat=00001fff cr4=00000000->00040600
+ xcr0=0000000000000007 xsz=00000340
+ disp mmx=00000001 sse=00000002 avx=00000002 avx512=00000000
+ brand=Intel Core Processor (Haswell)
+ selftest=00000006 OK

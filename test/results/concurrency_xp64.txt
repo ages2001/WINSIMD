@@ -1,0 +1,14 @@
+Multi-threaded SIMD concurrency probe (out/test/SIMDMT64.EXE) on XP x64,
+QEMU -smp 4 -cpu Haswell, WINSIMD.SYS loaded (AVX enabled by the driver).
+6 threads, 60,000,000 iterations each, counting cross-thread state corruption.
+
+  SSE (XMM) : 0 corruption events    => PASS, concurrent SSE is already safe
+  AVX (YMM) : 5616 corruption events => FAIL, YMM upper halves not preserved
+
+Interpretation:
+- On 2000/XP the OS saves/restores the full 512-byte FXSAVE area (x87+XMM) on
+  every context switch, so concurrent SSE/SSE2/.../SSE4.2 is already safe.
+- No NT/9x scheduler saves the YMM upper 128 bits (AVX) or ZMM/opmask (AVX-512),
+  so two+ threads using AVX concurrently corrupt each other's upper state.
+  This is independent of CPU count: it reproduces even on a single CPU because
+  threads are time-sliced and context-switch between each other.

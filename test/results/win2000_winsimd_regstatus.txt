@@ -1,0 +1,14 @@
+"Type"=dword:00000001
+"Start"=dword:00000001
+"ErrorControl"=dword:00000001
+"ImagePath"="System32\\drivers\\WINSIMD.SYS"
+"Features"=dword:00001fff
+"Cr4Before"=dword:000006d0
+"Cr4After"=dword:000406d0
+"Xcr0Lo"=dword:00000007
+"Xcr0Hi"=dword:00000000
+"DispMmx"=dword:00000001
+"DispSse"=dword:00000001
+"DispAvx"=dword:00000002
+"DispAvx512"=dword:00000000
+"XsaveSize"=dword:00000340

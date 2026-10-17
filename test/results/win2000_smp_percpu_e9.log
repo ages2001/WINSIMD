@@ -1,0 +1,14 @@
+
+[E9] winsimd load
+ vendor=GenuineIntel feat=00001fff cr4=000406d0->000406d0
+ xcr0=0000000000000007 xsz=00000340
+ disp mmx=00000001 sse=00000001 avx=00000002 avx512=00000000
+ nproc=00000002 ntos=00000001 smp=00000001 oscpu=00000002
+  cpu0 cr4=000406d0
+  cpu1 cr4=000406d0 selftest=00000006 OK
+
+[E9] intlfxsr load
+ vendor=GenuineIntel feat=00001fff cr4=000406d0->000406d0
+ xcr0=0000000000000007 xsz=00000340
+ disp mmx=00000001 sse=00000001 avx=00000002 avx512=00000000
+ selftest=00000006 OK

@@ -1,0 +1,7 @@
+@dpsr
+[E9] winsimd.vxd load
+ vendor=GenuineIntel feat=0000000f cr4=00000000->00000600
+ xcr0=0000000000000000 xsz=00000000
+ disp mmx=00000001 sse=00000002 avx=00000000 avx512=00000000
+ brand=GenuineIntel family 6 model 7 stepping 3
+ selftest=00000001 OK

@@ -1,0 +1,23 @@
+LIBRARY kernel32.dll
+EXPORTS
+GetModuleFileNameA
+GetSystemDirectoryA
+CopyFileA
+DeleteFileA
+GetLastError
+GetStdHandle
+WriteFile
+GetCommandLineA
+lstrlenA
+lstrcpyA
+lstrcatA
+ExitProcess
+GetModuleHandleA
+GetVersion
+CreateFileA
+DeviceIoControl
+CloseHandle
+CreateThread
+WaitForSingleObject
+Sleep
+GetTickCount

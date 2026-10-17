@@ -1,0 +1,17 @@
+LIBRARY advapi32.dll
+EXPORTS
+OpenSCManagerA
+CreateServiceA
+OpenServiceA
+StartServiceA
+ControlService
+DeleteService
+CloseServiceHandle
+ChangeServiceConfigA
+RegOpenKeyExA
+RegQueryValueExA
+RegCloseKey
+RegCreateKeyExA
+RegSetValueExA
+RegDeleteKeyA
+RegFlushKey
