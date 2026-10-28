@@ -94,6 +94,15 @@ int ilf_apply_all_cpus(ILF_CPU_INFO *ci)
         signed char *pn   = (signed char *)get_export(ntos, "KeNumberProcessors");
         set_aff_fn   seta = (set_aff_fn)   get_export(ntos, "KeSetSystemAffinityThread");
         revert_fn    rev  = (revert_fn)    get_export(ntos, "KeRevertToUserAffinityThread");
+        /* Only target processors that are actually ONLINE. On some multiprocessor
+           HALs (seen on NT 3.51 MPS), setting affinity to an application processor
+           that is not yet online stalls, which made a system-start load look like
+           a failed service. KeActiveProcessors is a KAFFINITY bitmask of online
+           CPUs; if it is absent (older/odd kernels) or looks bogus (CPU0 not set),
+           we ignore it and fall back to the plain KeNumberProcessors range. */
+        ILF_UPTR *pactive = (ILF_UPTR *)get_export(ntos, "KeActiveProcessors");
+        ILF_UPTR  active  = pactive ? *pactive : 0;
+        if (!(active & 1)) active = 0;   /* 0 => no mask */
         if (pn) g_smp_oscount = (ILF_U32)(unsigned char)*pn;
         if (pn && seta && rev) {
             int n = *pn, i, done = 0;
@@ -101,6 +110,7 @@ int ilf_apply_all_cpus(ILF_CPU_INFO *ci)
             if (n < 1)  n = 1;
             if (n > 64) n = 64;
             for (i = 0; i < n; i++) {
+                if (active && !((active >> i) & 1)) continue;  /* skip offline CPU */
                 seta((ILF_UPTR)1 << i);     /* pin to CPU i */
                 ilf_apply_policy(ci);        /* ...and enable it there */
                 done++;
@@ -108,6 +118,7 @@ int ilf_apply_all_cpus(ILF_CPU_INFO *ci)
             /* verification pass: re-visit each CPU and read its CR4 back, so
                the log proves every CPU (not just the boot one) was programmed */
             for (i = 0; i < n && i < 8; i++) {
+                if (active && !((active >> i) & 1)) continue;
                 seta((ILF_UPTR)1 << i);
                 g_cpu_cr4[i] = ilf_read_cr4();
             }

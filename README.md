@@ -46,14 +46,23 @@ Put the files for your architecture in one folder (for 9x: `i386\WINSIMD.EXE` +
 `i386\WINSINFO.EXE` + `9x\WINSIMD.VXD`), then:
 
 ```
-WINSIMD                 ; install + load on next reboot (AvxPolicy=0)
+WINSIMD                 ; install (auto-start by default) + AvxPolicy=0
 WINSIMD /safe           ; install + safe mode (AVX gated, AvxPolicy=1)
 WINSIMD /avx            ; install + AVX enabled (AvxPolicy=0, default)
+WINSIMD /auto           ; (NT) auto-start   (default)
+WINSIMD /system         ; (NT) system-start
 WINSIMD /boot           ; (NT) boot-start
 WINSIMD /demand         ; (NT) demand-start
 WINSIMD start | stop    ; (NT) load/stop without rebooting
 WINSIMD remove          ; uninstall
 ```
+
+The default start type is **auto-start**. On some multiprocessor HALs (seen on
+NT 3.51 MPS) a *system*-start driver loads before every application processor is
+fully online, so the per-CPU programming could stall and the service was reported
+as failed. Auto-start runs once all CPUs are up and still well before any user
+program needs SSE/AVX. `/system` and `/boot` remain available if you need an
+earlier load.
 
 - **NT:** the driver is copied to `System32\drivers\` and registered as a
   kernel-driver service.
@@ -68,8 +77,8 @@ WINSIMD remove          ; uninstall
 ```
 detected OS: Windows NT (5.2)
   -> installing amd64 WINSIMD.SYS (kernel driver, XP x64)
-installed service 'winsimd', start=1 (system)
-AVX policy: SAFE (AVX gated; apps use SSE) - AvxPolicy=1
+installed service 'winsimd', start=2 (auto)
+AVX policy: enabled (default) - AvxPolicy=0
 ```
 
 Then run **WINSINFO.EXE**: it shows the CPU name and, per feature, whether it is
@@ -101,13 +110,16 @@ bash scripts/build_test.sh     # concurrency stress test (out/test/SIMDMT64.EXE)
 
 ## Multi-CPU (SMP) — every core is programmed
 
-CR4/XCR0 are per-logical-CPU; otherwise AVX faults (#UD) on another core. The driver
-migrates the current thread to each CPU in turn (`KeSetSystemAffinityThread`) and
-applies the policy there. Those symbols exist only on NT 4.0+; to keep **one i386
-binary that still loads on NT 3.1**, they are not imported statically — they are
-resolved at run time from ntoskrnl's export table (ntoskrnl is located via the IAT
-slot of the one import we do have, `DbgPrint`). If absent (NT 3.1/3.5x) only the boot
-CPU is programmed. 9x is uniprocessor, so the VxD never uses this path.
+CR4/XCR0 are per-logical-CPU; otherwise SSE/AVX faults (#UD) on another core. The
+driver migrates the current thread to each CPU in turn (`KeSetSystemAffinityThread`)
+and applies the policy there. These symbols are not imported statically — so that
+**one i386 binary still loads on NT 3.1** — but are resolved at run time from
+ntoskrnl's export table (ntoskrnl is located via the IAT slot of the one import we
+do have, `DbgPrint`). When present (NT 3.51 and up expose them) every online CPU is
+programmed; when absent (very early NT) only the boot CPU is. Only processors in
+`KeActiveProcessors` (the online-CPU mask, also resolved at run time) are targeted,
+so the driver never stalls trying to pin to a CPU that is not up yet. 9x is
+uniprocessor, so the VxD never uses this path.
 
 Verified (`test/results/win2000_smp_percpu_e9.log`): Windows 2000, QEMU `-smp 4`,
 `smp=1 oscpu=2 nproc=2`, and both CPUs read back `cr4=406d0` → each was programmed
@@ -136,6 +148,38 @@ requires preserving the YMM/ZMM upper state per thread across context switches �
 i.e. hooking into the OS thread-switch path. That is a separate, careful
 OS-integration step and is **not in this release**. `SIMDMT64.EXE` is its pass/fail
 oracle (target: AVX events = 0).
+
+### SSE on multi-core NT 3.1 / 3.5x / 4.0 (important)
+
+The same mechanism has a consequence that shows up even for an ordinary,
+single-threaded SSE program on these OSes:
+
+- **2000/XP** manage the XMM register file themselves (they set CR4.OSFXSR and
+  save/restore all of XMM on every context switch). There SSE is safe on any number
+  of CPUs — the driver only adds AVX there.
+- **NT 3.1 / 3.5x / 4.0** (and 9x) predate OS SSE support: their scheduler saves only
+  x87/MMX, **never XMM**. WINSIMD sets CR4.OSFXSR so SSE instructions don't #UD, but
+  the OS still does not preserve XMM. On a **single CPU** a program that is the only
+  XMM user keeps its registers across switches (nothing else overwrites them), so it
+  works. On **multiple CPUs** the scheduler can migrate the thread to another core,
+  and the physical XMM registers do **not** travel with it — after a migration the
+  thread sees the other core's stale XMM. The result: an SSE program on multi-core
+  pre-NT4 runs without #UD but produces wrong results (this is exactly issue #1 on
+  NT 3.51: "works only if one CPU core is active"). It is the same class of problem
+  as the AVX case above, for XMM instead of YMM.
+
+  Until per-thread vector-state preservation lands, the options on pre-NT4
+  multiprocessor systems are:
+  - **Run the SSE program on one CPU.** System-wide:
+    `HKLM\System\CurrentControlSet\Control\Session Manager\RegisteredProcessors = 1`
+    (the workaround confirmed in issue #1), or boot a uniprocessor HAL. Per-process
+    CPU affinity (e.g. `start /affinity 1 prog.exe` on NT4+) also avoids migration.
+  - Use the SSE build path only where the OS manages XMM (2000/XP), where it is safe
+    regardless of core count.
+
+  WINSIMD still programs CR4 on every core (so there is no #UD), but it cannot make
+  the XMM *content* follow a migrating thread without the context-switch integration
+  noted above.
 
 ### Safe mode (AvxPolicy) — a controlled choice instead of silent corruption
 
@@ -205,6 +249,9 @@ out/                     prebuilt binaries (i386, amd64, 9x, test)
 
 - **Concurrent AVX/AVX-512 (transparent):** not in this release — see "Concurrent
   SIMD correctness" above. Safe mode (`AvxPolicy=1`) is the shipped mitigation.
+- **SSE on multi-core NT 3.1/3.5x/4.0:** XMM is not preserved across CPU migration
+  on these OSes — see "SSE on multi-core NT 3.1/3.5x/4.0" above. Run such programs
+  on one CPU, or use 2000/XP where the OS manages XMM. Tracked as issue #1.
 - **Windows 98/ME:** the same VxD; if 98 sets OSFXSR itself the policy reports SSE as
   `OS_MANAGED`. Not tested here with a 98/ME image.
 - **NT 3.1 hive:** `regf` v1.1; `nt31_inject.py` produces a valid hive but NT 3.1's

@@ -191,6 +191,12 @@ static void draw_chip(HDC hdc,int x,int y){   /* little CPU-chip icon, ~34px */
     TextOutA(hdc,x+6,y+10,"SIMD",4);
 }
 
+/* SSE driver-enabled (OS doesn't manage XMM) on more than one CPU -> XMM is not
+   preserved across CPU migration; warn the user. */
+static int xmm_migration_warn(void){
+    return g_have && g_ci.disp_sse==ILF_DISP_DRIVER_ENABLED && g_ci.nproc_applied>1;
+}
+
 static void paint(HDC hdc,HWND hwnd){
     RECT rc;
     g_pal = (GetDeviceCaps(hdc,BITSPIXEL)*GetDeviceCaps(hdc,PLANES) <= 8) ? pal_vga : pal_full;
@@ -278,6 +284,18 @@ static void paint(HDC hdc,HWND hwnd){
         TextOutA(hdc,290,y,st,slen(st));
         y+=20;
     }
+    /* Warn when SSE is driver-enabled (OS does not manage XMM: NT 3.1/3.5x/4, 9x)
+       AND more than one CPU was programmed: XMM is not preserved across a CPU
+       migration there, so even a single-threaded SSE program can get wrong
+       results. See README and issue #1. */
+    if (xmm_migration_warn()) {
+        const char *w1 = "! SSE on, but this OS does not keep XMM across CPU cores.";
+        const char *w2 = "  Run SSE programs on one CPU (see README / issue #1).";
+        SelectObject(hdc,fBody); SetTextColor(hdc,C_RED);
+        TextOutA(hdc,20,y+6, w1,slen(w1));
+        SetTextColor(hdc,C_SUB);
+        TextOutA(hdc,20,y+24,w2,slen(w2));
+    }
 done:
     SelectObject(hdc,GetStockObject(ANSI_FIXED_FONT));
     DeleteObject(fTitle);DeleteObject(fSub);DeleteObject(fName);DeleteObject(fBody);DeleteObject(fBold);
@@ -303,7 +321,7 @@ void STDCALL wininfo_start(void){
     RegisterClassA(&wc);
     hwnd=CreateWindowExA(0,"WinSimdInfo","WINSIMD - SIMD Info",
         WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE,
-        CW_USEDEFAULT,CW_USEDEFAULT,440,404,NULL,NULL,hi,NULL);
+        CW_USEDEFAULT,CW_USEDEFAULT,440,404+(xmm_migration_warn()?52:0),NULL,NULL,hi,NULL);
     ShowWindow(hwnd,SW_SHOW); UpdateWindow(hwnd);
     while(GetMessageA(&msg,NULL,0,0)>0){ TranslateMessage(&msg); DispatchMessageA(&msg); }
     ExitProcess(0);

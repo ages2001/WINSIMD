@@ -1,11 +1,11 @@
 /*
  * ilfinst.c - tiny CRT-free console installer for intlfxsr.sys.
  *
- *   ilfinst [install|remove|start|stop] [/boot|/system|/demand]
+ *   ilfinst [install|remove|start|stop] [/auto|/system|/boot|/demand]
  *
  * install (default): copy intlfxsr.sys (next to this exe) into
  *   %SystemRoot%\System32\drivers\ and register a kernel-driver service.
- *   Default start = system (SERVICE_SYSTEM_START); /boot = boot-start.
+ *   Default start = auto (SERVICE_AUTO_START); /system, /boot, /demand override.
  *
  * Windows 9x (95/98/ME): the same EXE copies WINSIMD.VXD into
  *   %windir%\SYSTEM\ and registers it as a static VxD under
@@ -77,6 +77,7 @@ long  STDCALL RegFlushKey(HKEY)                                 IMP(RegFlushKey)
 #define SERVICE_KERNEL_DRIVER   0x00000001u
 #define SERVICE_BOOT_START      0x00000000u
 #define SERVICE_SYSTEM_START    0x00000001u
+#define SERVICE_AUTO_START      0x00000002u
 #define SERVICE_DEMAND_START    0x00000003u
 #define SERVICE_ERROR_NORMAL    0x00000001u
 #define SERVICE_CONTROL_STOP    0x00000001u
@@ -193,7 +194,8 @@ static int do_install(DWORD startType)
     outs("installed service '" SVC_NAME "', start=");
     outu(startType);
     outs(startType == SERVICE_BOOT_START   ? " (boot)\n"   :
-         startType == SERVICE_SYSTEM_START ? " (system)\n" : " (demand)\n");
+         startType == SERVICE_SYSTEM_START ? " (system)\n" :
+         startType == SERVICE_AUTO_START   ? " (auto)\n"   : " (demand)\n");
     outs(g_policy ? "AVX policy: SAFE (AVX gated; apps use SSE) - AvxPolicy=1\n"
                   : "AVX policy: enabled (default) - AvxPolicy=0\n");
     outs("reboot to load at boot; or 'ilfinst start' to load now.\n");
@@ -312,7 +314,12 @@ static void report_os(void)
 void STDCALL ilf_start(void)
 {
     char *cmd = GetCommandLineA();
-    DWORD startType = SERVICE_SYSTEM_START;
+    /* Default to auto-start. On some multiprocessor HALs (seen on NT 3.51 MPS),
+       a system-start driver loads before every application processor is fully
+       online, so the per-CPU affinity programming can stall and the service is
+       reported as failed. Auto-start runs after all CPUs are up and still well
+       before user programs need SSE/AVX. /system and /boot remain available. */
+    DWORD startType = SERVICE_AUTO_START;
     int rc;
 
     outs("winsimd installer\n");
@@ -321,6 +328,7 @@ void STDCALL ilf_start(void)
     if (contains(cmd, "/boot"))   startType = SERVICE_BOOT_START;
     if (contains(cmd, "/demand")) startType = SERVICE_DEMAND_START;
     if (contains(cmd, "/system")) startType = SERVICE_SYSTEM_START;
+    if (contains(cmd, "/auto"))   startType = SERVICE_AUTO_START;
     if (contains(cmd, "/safe"))   g_policy = 1;   /* gate AVX */
     if (contains(cmd, "/avx"))    g_policy = 0;   /* force-enable AVX */
 
