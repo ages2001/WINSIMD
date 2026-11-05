@@ -1,0 +1,22 @@
+Logical processors 1
+Elapsed milliseconds 3915
+Wait result 0
+Affinity rounds 0
+Affinity errors 0
+Worker 0
+XMM mismatches 33
+MXCSR mismatches 32
+x87 mismatches 0
+Worker 1
+XMM mismatches 34
+MXCSR mismatches 34
+x87 mismatches 0
+Worker 2
+XMM mismatches 33
+MXCSR mismatches 33
+x87 mismatches 0
+Worker 3
+XMM mismatches 33
+MXCSR mismatches 33
+x87 mismatches 0
+Total failures 265

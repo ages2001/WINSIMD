@@ -1,0 +1,23 @@
+Logical processors 4
+Affinity API 2
+Elapsed milliseconds 14040
+Wait result 1
+Affinity rounds 227
+Affinity errors 0
+Worker 0
+XMM mismatches 0
+MXCSR mismatches 0
+x87 mismatches 0
+Worker 1
+XMM mismatches 0
+MXCSR mismatches 0
+x87 mismatches 0
+Worker 2
+XMM mismatches 0
+MXCSR mismatches 0
+x87 mismatches 0
+Worker 3
+XMM mismatches 0
+MXCSR mismatches 0
+x87 mismatches 0
+Total failures 0

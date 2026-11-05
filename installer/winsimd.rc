@@ -1,0 +1,2 @@
+#define IDI_WINSIMD 1
+IDI_WINSIMD ICON "winsimd.ico"

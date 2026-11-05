@@ -1,0 +1,43 @@
+WTEST native-behavior probe (no guard installed) 0
+Logical processors 2
+Affinity API 1
+AVX usable 1
+XMM phase ms 14500
+Affinity rounds 134
+Worker 0
+XMM mismatches 0
+MXCSR mismatches 0
+x87 mismatches 0
+Worker 1
+XMM mismatches 0
+MXCSR mismatches 0
+x87 mismatches 0
+Worker 2
+XMM mismatches 0
+MXCSR mismatches 0
+x87 mismatches 0
+Worker 3
+XMM mismatches 0
+MXCSR mismatches 0
+x87 mismatches 0
+XMM total failures 0
+YMM phase ms 15062
+Affinity rounds 138
+Worker 0
+YMM mismatches 233
+MXCSR mismatches 0
+x87 mismatches 0
+Worker 1
+YMM mismatches 227
+MXCSR mismatches 0
+x87 mismatches 0
+Worker 2
+YMM mismatches 220
+MXCSR mismatches 0
+x87 mismatches 0
+Worker 3
+YMM mismatches 215
+MXCSR mismatches 0
+x87 mismatches 0
+YMM total failures 895
+Done 0

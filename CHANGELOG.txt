@@ -1,0 +1,89 @@
+Changelog:
+
+Version 1.2 - 2026-11-02
+
+Added after the initial 1.2 cut
+- Windows XP (NT 5.1, x86) and Windows 2000: YMM upper-only guard rows, verified.
+- Windows XP x64 / Server 2003 x64 (YMMGUARD.SYS): 64-bit upper-only YMM guard
+  with a 14-byte inline hook + pool trampoline; PatchGuard neutralized by
+  booting boot.ini /debug. Install, PG-bypass and stability verified (YMM0-7).
+- Windows 9x thread-switch guard (WINSIMD.VXD): hooks the VMM scheduler via
+  Call_When_Thread_Switched and preserves the per-thread vector state the OS
+  does not. Full vs upper-only mode is chosen from CR4.OSFXSR (whether VMCPD is
+  SSE-aware), mirroring the NT guard. Verified: Win95 RTM full mode cuts the
+  W9XTEST concurrency corruption from 348/282 to 81/75 (stable); Windows Me
+  (SSE-aware, no AVX) correctly defers XMM to VMCPD -> 0 mismatches (PASS).
+- Installer: one WINSIMD.EXE that auto-detects NT vs Win9x, and on install
+  creates tool + uninstall shortcuts per shell -- a DDE Program Manager group
+  with a red-X uninstall icon on NT 3.x, or a Start-Menu .lnk + Add/Remove
+  Programs entry on Explorer shells. ole32 is loaded at runtime so the same
+  binary still loads on NT 3.1. The tool is "WINSIMD Info" with an embedded app
+  icon. Verified on NT 3.1 and Windows 95.
+
+New in this release
+- Transparent per-thread preservation of the vector register state the OS does
+  not keep across context switches and CPU migration, so SSE and AVX code can
+  run concurrently on old Windows. Two kernel families are supported and
+  verified:
+    * NT 3.1 (UP + MP, x86): the scheduler saves no SIMD state, so the guard
+      owns the whole register file (XMM + MXCSR, and YMM upper on AVX).
+    * Windows 2000 / NT 5.0 (UP + MP, x86): the scheduler already preserves XMM
+      + MXCSR, so the guard keeps ONLY the YMM upper halves ("upper-only" mode)
+      and leaves the OS's XMM state untouched.
+- Generic kernel discovery: the guard locates the running kernel and scans its
+  image for the unique context-switch-count instruction bytes of a known layout
+  instead of hard-coding a kernel timestamp or image base. It hooks only on an
+  exactly-once match and refuses cleanly (no patch, no crash) otherwise. Adding
+  an OS is adding one validated row.
+- Per-CPU outgoing-thread tracking: the hook needs only the incoming-thread
+  register (the outgoing thread is the one each CPU last switched to, tracked by
+  the guard). This is what makes NT 5.0 hookable, where the outgoing-thread
+  register has already been reused by the context-switch-count increment.
+- Multi-instruction displacement: when the hooked increment is shorter than the
+  5-byte jmp (NT 5.0's is 3 bytes), the following instruction is displaced too
+  and re-executed from the generated trampoline.
+- Added VTEST.EXE (installs + starts the guard, then runs the migration test)
+  and WTEST.EXE (same workload without the guard, to measure native OS behavior).
+- Host-only toolchain (clang-18 / lld-link / llvm-dlltool / nasm); no MinGW
+  sysroot. scripts/build_guard_generic.sh, build_vtest.sh, build_wtest.sh.
+
+Verification (QEMU, test/results/)
+- NT 3.1 MP (ntkrnlmp + MP HAL), 4 CPUs: guard installed via runtime scan
+  (width=1 mode=0 site=0x604b0 cpus=4); 4-worker migration test ran hundreds of
+  XMM and YMM affinity rounds with zero XMM / YMM / MXCSR / x87 mismatches.
+- Windows 2000, 2 CPUs: without the guard the AVX phase leaked YMM state (895
+  mismatches); with the guard (width=1 mode=1 site=0x66df3 cpus=2) YMM
+  mismatches dropped to 0 and XMM stayed 0.
+- Guard refusal verified safe: the NT 3.1 context-switch bytes do not occur in
+  the Windows 2000 or XP x64 kernels, so the guard refuses there without
+  patching.
+
+Fixed
+- Driver kernel imports (DbgPrint, MmIsAddressValid, KeBugCheckEx) are now
+  emitted with undecorated names so the NT loader resolves them against
+  ntoskrnl's stdcall exports; the earlier decorated "<name>@N" import names made
+  StartService fail with ERROR_PROC_NOT_FOUND (127).
+
+Known limits
+- ZMM / opmask (AVX-512) save-restore code is present but was not verified on
+  AVX-512 hardware.
+- x86 only. Windows XP x64 / Server 2003 x64 would need a 64-bit build of the
+  upper-only approach, but x64 Windows ships Kernel Patch Protection
+  (PatchGuard), which bugchecks (0x109) on a patched SwapContext; a 64-bit guard
+  is only usable with PatchGuard disabled. Windows 9x has no NT scheduler and
+  needs a separate VxD-level thread-switch hook.
+- Demand-load only, no unload path; reboot before replacing. The 512-entry
+  thread table is bounded and bugchecks (0xE0120001) on exhaustion rather than
+  substituting state.
+
+Version 1.1
+
+- Default auto-start service registration and active-CPU affinity masking so the
+  driver programs every online CPU on NT 3.51 multiprocessor systems (issue #1).
+- AvxPolicy registry flag (safe mode) to keep AVX disabled so applications fall
+  back to SSE when desired.
+
+Version 1.0
+
+- Initial release: enable CR4/XCR0 SIMD state bits on every logical processor
+  across legacy Windows (NT x86/x64 and Windows 9x via VxD).

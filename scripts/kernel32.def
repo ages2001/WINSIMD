@@ -21,3 +21,8 @@ CreateThread
 WaitForSingleObject
 Sleep
 GetTickCount
+GetWindowsDirectoryA
+CreateDirectoryA
+LoadLibraryA
+GetProcAddress
+FreeLibrary

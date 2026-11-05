@@ -17,3 +17,10 @@ MessageBoxA
 FillRect
 GetClientRect
 wsprintfA
+DdeInitializeA
+DdeCreateStringHandleA
+DdeConnect
+DdeClientTransaction
+DdeDisconnect
+DdeFreeStringHandle
+DdeUninitialize

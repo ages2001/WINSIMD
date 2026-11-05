@@ -17,6 +17,63 @@ ILF_CPU_INFO g_ilf;          /* resident snapshot */
 static int   g_done;
 static int   g_selftest;
 
+/* ---- thread-switch vector guard (see vxd/vxdsched.asm) ---- */
+void           register_switch_cb(void);     /* asm: hook the scheduler        */
+void           ymm_save8(void *buf);          /* asm: store XMM0-7 / YMM0-7      */
+void           ymm_restore8(void *buf);       /* asm: load  XMM0-7 / YMM0-7      */
+unsigned char  vxd_avx;                        /* asm reads this: 1=YMM, 0=XMM   */
+unsigned char  vxd_upper;                      /* asm reads this: 1=upper-only   */
+
+/* Per-thread saved vector state, keyed by VMM thread handle. Bounded, with
+   round-robin eviction (an evicted thread just reloads zero upper next time -
+   a benign correctness loss, never a fault), exactly like the x64 guard. */
+/* buf: 8 vector regs * 32B = 0x100, then MXCSR (4B) at offset 0x100. */
+typedef struct { ILF_U32 thread; ILF_U8 buf[0x100 + 16]; } VSlot;
+#define NVSLOT 256
+static VSlot   g_vs[NVSLOT];
+static ILF_U32 g_vrr;                          /* round-robin cursor            */
+static ILF_U32 g_prev;                         /* thread this CPU last ran      */
+static int     g_guard_on;
+
+static VSlot *vs_find(ILF_U32 thread)
+{
+    ILF_U32 i; VSlot *empty = 0;
+    for (i = 0; i < NVSLOT; i++) {
+        if (g_vs[i].thread == thread) return &g_vs[i];
+        if (!g_vs[i].thread && !empty) empty = &g_vs[i];
+    }
+    if (!empty) { empty = &g_vs[g_vrr]; g_vrr = (g_vrr + 1) % NVSLOT; }
+    empty->thread = thread;
+    for (i = 0; i < sizeof(empty->buf); i++) empty->buf[i] = 0;
+    return empty;
+}
+
+/* Called from the asm scheduler callback with the incoming thread handle.
+   The vector registers still hold the OUTGOING thread's data (VMCPD does not
+   touch XMM/YMM), so save them for g_prev, then load the incoming thread's. */
+ILF_U32 g_sw_calls, g_sw_real;
+/* The scheduler thread-switch callback hands us two thread-control-block
+   pointers in the pushad frame - EAX and EDI - which each switch are the
+   outgoing and incoming threads (EBX is the constant VM handle). We identify
+   them by state rather than by register, since which one is which varies: at
+   callback time the live vector registers belong to the thread we last
+   switched to (g_prev), so the OUTGOING is g_prev and the INCOMING is whichever
+   of {EAX, EDI} is not g_prev. The save (to g_prev) is therefore always
+   correct; the restore picks the incoming.
+   pushad frame order (top of stack -> ): edi,esi,ebp,esp,ebx,edx,ecx,eax */
+void __cdecl vxd_switch(ILF_U32 *f)
+{
+    ILF_U32 a = f[7], d = f[0];       /* EAX, EDI : the two thread handles */
+    ILF_U32 out = g_prev;
+    ILF_U32 inc = (a != out) ? a : d; /* incoming = the handle that isn't live */
+    g_sw_calls++;
+    if (inc == out) return;
+    g_sw_real++;
+    if (out) ymm_save8(vs_find(out)->buf);   /* save the live (outgoing) regs */
+    ymm_restore8(vs_find(inc)->buf);         /* load the incoming thread's    */
+    g_prev = inc;
+}
+
 /* Win32 DeviceIoControl parameter block (VWIN32 -> VxD, ESI on entry) */
 typedef struct {
     ILF_U32  Internal1, VMHandle, Internal2;
@@ -79,6 +136,43 @@ void __cdecl vxd_init(void)
     TRACE('r');
 #ifdef ILF_E9_DEBUG
     e9_report(&g_ilf, g_selftest);
+#endif
+}
+
+/* Device_Init: register the scheduler callback once the CPU is programmed and
+   the scheduler is up, but only if there is vector state the OS won't keep. */
+void __cdecl vxd_device_init(void)
+{
+    int os_keeps_xmm;
+    if (g_guard_on) return;
+    if (!(g_ilf.features & ILF_FEAT_SSE)) return;     /* nothing to guard   */
+    g_guard_on = 1;
+    TRACE('H');
+
+    vxd_avx = (g_ilf.features & ILF_FEAT_AVX) &&
+              (g_ilf.features & ILF_FEAT_XSAVE) &&
+              (g_ilf.xcr0_after & ILF_XCR0_AVX) &&
+              !g_ilf.safe_mode;
+
+    /* If OSFXSR was already set before WINSIMD ran, the OS (its VMCPD) is
+       SSE-aware and preserves XMM + MXCSR itself (Win98 SE / ME). Then we must
+       NOT touch XMM - only keep the YMM upper halves (upper-only mode) - or we
+       collide with its lazy fxsave/fxrstor. If the OS is not SSE-aware (Win95 /
+       Win98 FE, cr4_before has no OSFXSR) we own the full register (full mode). */
+    os_keeps_xmm = (g_ilf.cr4_before & ILF_CR4_OSFXSR) != 0;
+    vxd_upper = os_keeps_xmm ? 1 : 0;
+
+    /* When the OS already keeps XMM and there is no AVX, there is nothing left
+       for the guard to preserve - leave XMM to the OS and do not hook. */
+    if (os_keeps_xmm && !vxd_avx) {
+        TRACE('N');                /* no-op: OS preserves XMM, no AVX to guard */
+        return;
+    }
+#ifndef VXD_NO_GUARD
+    register_switch_cb();          /* -DVXD_NO_GUARD builds an enable-only baseline */
+    TRACE(vxd_upper ? 'U' : (vxd_avx ? 'Y' : 'X'));
+#else
+    TRACE('0');
 #endif
 }
 

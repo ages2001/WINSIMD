@@ -1,0 +1,2 @@
+Existing service state 4
+Reboot required before replacement 1

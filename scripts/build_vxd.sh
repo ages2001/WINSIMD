@@ -12,6 +12,7 @@ CF="--target=i386-pc-windows-msvc -march=i386 -mno-mmx -mno-sse -mno-sse2 -mno-s
     -mno-avx -mno-x87 -ffreestanding -fno-stack-protector -fno-builtin -Os -Wall -Iinclude $E9FLAG"
 nasm -f win32 src/lowlevel_x86.asm -o $B/ll.obj
 nasm -f win32 ${E9:+-DE9TRACE} vxd/vxdglue.asm -o $B/glue.obj
+nasm -f win32 ${E9:+-DE9TRACE} vxd/vxdsched.asm -o $B/sched.obj
 for f in src/core.c src/guard.c vxd/vxdmain.c; do
   o=$B/$(basename $f .c).obj
   clang $CF -c $f -o $o
@@ -23,5 +24,5 @@ done
 lld-link /nologo /dll /noentry /nodefaultlib /machine:x86 /base:0x10000000 \
   /opt:noref /merge:.rdata=.text /merge:.data=.text /merge:.bss=.text \
   /section:.text,RWE /out:$B/winsimd_vxd.dll \
-  $B/glue.obj $B/ll.obj $B/core.obj $B/guard.obj $B/vxdmain.obj
+  $B/glue.obj $B/sched.obj $B/ll.obj $B/core.obj $B/guard.obj $B/vxdmain.obj
 python3 -I scripts/pe2le.py $B/winsimd_vxd.dll out/9x/WINSIMD.VXD

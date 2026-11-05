@@ -5,9 +5,11 @@
 bits 32
 
 Sys_Critical_Init   equ 00h
+Device_Init         equ 01h
 W32_DEVICEIOCONTROL equ 23h
 
 extern _vxd_init                ; void __cdecl vxd_init(void)
+extern _vxd_device_init         ; void __cdecl vxd_device_init(void)
 extern _vxd_ioctl               ; u32  __cdecl vxd_ioctl(DIOCPARAMS *)
 
 section .text
@@ -20,7 +22,11 @@ _ControlProc:
     cmp     eax, W32_DEVICEIOCONTROL
     je      .dioc
     cmp     eax, Sys_Critical_Init
-    jne     .ok
+    je      .crit
+    cmp     eax, Device_Init
+    je      .devinit
+    jmp     .ok
+.crit:
     pushad
     cld
 %ifdef E9TRACE
@@ -28,6 +34,13 @@ _ControlProc:
     out     0E9h, al
 %endif
     call    _vxd_init
+    popad
+    clc
+    ret
+.devinit:
+    pushad
+    cld
+    call    _vxd_device_init            ; register the thread-switch guard
     popad
 .ok:
     clc

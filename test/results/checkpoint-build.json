@@ -1,0 +1,19 @@
+{
+  "built_binaries_sha256": {
+    "out/research/XMMGUARD.SYS": "ad740e33197b7201ccb5bd817074b5288f04776311e143f76a22f28c85c94f2b",
+    "out/research/LOADXMM.EXE": "a9ad6623076798e49bb74c6c2b8ef74bc5c81e20eef5b7acbd5c7b1584d43ace",
+    "out/test/XMMTEST.EXE": "ce9ddcdef2da34ae76339f83cf9180e475461501e0e06f695f52018c0444134a",
+    "out/test/XMMCHURN.EXE": "ca3ce1d4bcbf70452c09d4bf67846dd1f9226e27bc8373f958d69afe0b330bfe"
+  },
+  "kernel_sha256": "3d71cc85f22f5dc25ec2e344ad9b646d9c24d852ee537b290c2ef1ca69eda92d",
+  "migration_log": "nt31-gui-kernel-xmm-migration.txt",
+  "thread_churn_log": "nt31-gui-kernel-thread-churn.txt",
+  "limitations": [
+    "SSE2 only; YMM/ZMM preservation absent",
+    "Research hook installation lacks an all-CPU rendezvous",
+    "512 simultaneous state slots"
+  ],
+  "up_current_build_log": "nt31-up-current-build-xmm.txt",
+  "up_current_loader_log": "nt31-up-current-loader.txt",
+  "up_current_build_result": "Clean reboot, current loader starts service, four workers, zero mismatches."
+}

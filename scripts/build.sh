@@ -30,6 +30,10 @@ for dll in kernel32 advapi32 user32 gdi32; do
   llvm-dlltool -m i386:x86-64           -d scripts/$dll.def -D $dll.dll -l "$B/${dll}_x64.lib"
 done
 
+echo "== resources (app icon) =="
+# Classic 16-color icon (32x32 + 16x16) so it shows on every target incl. NT 3.1.
+llvm-rc /fo "$B/winsimd.res" "$ROOT/installer/winsimd.rc"
+
 echo "== assemble primitives =="
 nasm -f win32 src/lowlevel_x86.asm -o "$B/ll_x86.obj"
 nasm -f win64 src/lowlevel_x64.asm -o "$B/ll_x64.obj"
@@ -62,19 +66,21 @@ echo "== installer =="
 $CC $CF_I386 -c installer/ilfinst.c -o "$B/inst_x86.obj"
 $CC $CF_X64  -c installer/ilfinst.c -o "$B/inst_x64.obj"
 lld-link /nologo /subsystem:console,3.10 /entry:ilf_start@0 /nodefaultlib /machine:x86 \
-  /out:"$OUT/i386/WINSIMD.EXE" "$B/inst_x86.obj" "$B/kernel32_x86.lib" "$B/advapi32_x86.lib"
+  /out:"$OUT/i386/WINSIMD.EXE" "$B/inst_x86.obj" "$B/kernel32_x86.lib" "$B/advapi32_x86.lib" \
+  "$B/user32_x86.lib" "$B/winsimd.res"
 lld-link /nologo /subsystem:console,5.02 /entry:ilf_start /nodefaultlib /machine:x64 \
-  /out:"$OUT/amd64/WINSIMD.EXE" "$B/inst_x64.obj" "$B/kernel32_x64.lib" "$B/advapi32_x64.lib"
+  /out:"$OUT/amd64/WINSIMD.EXE" "$B/inst_x64.obj" "$B/kernel32_x64.lib" "$B/advapi32_x64.lib" \
+  "$B/user32_x64.lib" "$B/winsimd.res"
 
 echo "== WINSINFO GUI =="
 $CC $CF_I386 -c gui/wininfo.c -o "$B/gui_x86.obj"
 $CC $CF_X64  -c gui/wininfo.c -o "$B/gui_x64.obj"
 lld-link /nologo /subsystem:windows,3.10 /entry:wininfo_start@0 /nodefaultlib /machine:x86 \
   /out:"$OUT/i386/WINSINFO.EXE" "$B/gui_x86.obj" \
-  "$B/kernel32_x86.lib" "$B/user32_x86.lib" "$B/gdi32_x86.lib" "$B/advapi32_x86.lib"
+  "$B/kernel32_x86.lib" "$B/user32_x86.lib" "$B/gdi32_x86.lib" "$B/advapi32_x86.lib" "$B/winsimd.res"
 lld-link /nologo /subsystem:windows,5.02 /entry:wininfo_start /nodefaultlib /machine:x64 \
   /out:"$OUT/amd64/WINSINFO.EXE" "$B/gui_x64.obj" \
-  "$B/kernel32_x64.lib" "$B/user32_x64.lib" "$B/gdi32_x64.lib" "$B/advapi32_x64.lib"
+  "$B/kernel32_x64.lib" "$B/user32_x64.lib" "$B/gdi32_x64.lib" "$B/advapi32_x64.lib" "$B/winsimd.res"
 
 echo "== Windows 9x VxD =="
 E9="${E9:-0}" bash scripts/build_vxd.sh 2>&1 | grep -v "already merged"

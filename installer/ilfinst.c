@@ -142,6 +142,10 @@ static void dirof(char *path)
     if (last >= 0) path[last + 1] = 0;
 }
 
+/* tool + uninstall shortcuts (Program Manager group / Start-Menu .lnk +
+   Add/Remove Programs). Uses the macros, Win32 decls and helpers above. */
+#include "shortcuts.c"
+
 static SC_HANDLE open_scm(void)
 {
     SC_HANDLE scm = OpenSCManagerA(NULL, NULL, SC_MANAGER_ALL_ACCESS);
@@ -191,6 +195,7 @@ static int do_install(DWORD startType)
     }
     (void)tmp;
     set_avx_policy(g_policy);
+    install_shortcuts();
     outs("installed service '" SVC_NAME "', start=");
     outu(startType);
     outs(startType == SERVICE_BOOT_START   ? " (boot)\n"   :
@@ -242,6 +247,7 @@ static int do_remove(void)
     GetSystemDirectoryA(dst, sizeof(dst));
     lstrcatA(dst, "\\drivers\\" SVC_FILE);
     if (DeleteFileA(dst)) outs("driver file removed.\n");
+    remove_shortcuts();
     return 0;
 }
 
@@ -275,6 +281,7 @@ static int do_install_9x(void)
     RegSetValueExA(k, "Start", 0, REG_BINARY, &start0, 1);
     RegFlushKey(k);                                /* commit to SYSTEM.DAT now */
     RegCloseKey(k);
+    install_shortcuts();
     outs("installed static VxD (HKLM\\" VXD_KEY ").\n");
     outs("reboot to load it.\n");
     return 0;
@@ -287,6 +294,7 @@ static int do_remove_9x(void)
     if (RegDeleteKeyA(HKEY_LOCAL_MACHINE, VXD_KEY) == 0) outs("registry entry removed.\n");
     else outs("registry entry not present.\n");
     if (DeleteFileA(dst)) outs("VxD file removed.\n");
+    remove_shortcuts();
     outs("reboot to unload it.\n");
     return 0;
 }
