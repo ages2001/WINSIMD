@@ -1,0 +1,4 @@
+Start error 0
+Service state 4
+Win32 exit 0
+Service exit 0

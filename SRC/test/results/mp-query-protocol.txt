@@ -1,0 +1,12 @@
+Hardware SSE2 1
+Context ready 1
+Query success 1
+Bytes 28
+Processors 4
+Flags 1
+Kernel timestamp 743555210
+Short buffer error 122
+Unexpected input error 87
+Unknown request error 1
+Checks 4
+Failures 0

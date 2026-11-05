@@ -1,0 +1,3 @@
+Hardware SSE2 1
+Context ready 0
+Device absent error 2

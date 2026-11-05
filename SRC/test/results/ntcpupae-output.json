@@ -1,0 +1,14 @@
+{
+  "HALMPCPU.DLL": {
+    "sha256": "9bf895000cd514b7ee3d2a0e5a4318d44be10d5dd48779911d0065c055be38ab",
+    "timestamp": "0x6acfda93",
+    "checksum_valid": true,
+    "image_base": "0x80400000"
+  },
+  "NTKRCPU.EXE": {
+    "sha256": "98af69dd94a36846c4fa17e158813a64e96c3f96703993e3bdffbb9cd506a25f",
+    "timestamp": "0x2c51c08a",
+    "checksum_valid": true,
+    "image_base": "0x80100000"
+  }
+}

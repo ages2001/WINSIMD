@@ -1,89 +1,138 @@
 Changelog:
 
-Version 1.2 - 2026-11-02
+Version 1.2 - 2026-11-04
 
-Added after the initial 1.2 cut
-- Windows XP (NT 5.1, x86) and Windows 2000: YMM upper-only guard rows, verified.
-- Windows XP x64 / Server 2003 x64 (YMMGUARD.SYS): 64-bit upper-only YMM guard
-  with a 14-byte inline hook + pool trampoline; PatchGuard neutralized by
-  booting boot.ini /debug. Install, PG-bypass and stability verified (YMM0-7).
-- Windows 9x thread-switch guard (WINSIMD.VXD): hooks the VMM scheduler via
-  Call_When_Thread_Switched and preserves the per-thread vector state the OS
-  does not. Full vs upper-only mode is chosen from CR4.OSFXSR (whether VMCPD is
-  SSE-aware), mirroring the NT guard. Verified: Win95 RTM full mode cuts the
-  W9XTEST concurrency corruption from 348/282 to 81/75 (stable); Windows Me
-  (SSE-aware, no AVX) correctly defers XMM to VMCPD -> 0 mismatches (PASS).
-- Installer: one WINSIMD.EXE that auto-detects NT vs Win9x, and on install
-  creates tool + uninstall shortcuts per shell -- a DDE Program Manager group
-  with a red-X uninstall icon on NT 3.x, or a Start-Menu .lnk + Add/Remove
-  Programs entry on Explorer shells. ole32 is loaded at runtime so the same
-  binary still loads on NT 3.1. The tool is "WINSIMD Info" with an embedded app
-  icon. Verified on NT 3.1 and Windows 95.
+Register context guard (new, generic)
+- WINSIMD.SYS (x86) and WINSIMD.VXD now preserve the SIMD register files the
+  operating system does not save across thread switches. XMMGUARD/LOADXMM
+  are no longer needed.
+- Mechanism: a hook on vector 7 (#NM, device not available) in front of the
+  OS handler. Every supported scheduler switches the FPU lazily (CR0.TS), so
+  the first x87/MMX/SSE/AVX/AVX-512 instruction of a thread that does not own
+  the registers traps there. The guard then stores the registers of their
+  previous owner and loads those of the new thread. Ownership follows the OS's
+  own FPU ownership. The mechanism is not tied to any kernel build or
+  offset.
+- Saved components are exactly those the OS does not manage:
+  XMM0-7 + MXCSR (NT 3.1/3.5x/4.0, Windows 95, Windows 98 first edition);
+  YMM upper halves, opmask and ZMM (every target), using XSAVE/XRSTOR with
+  that component mask. Without XSAVE, MOVUPS/STMXCSR are used.
+- Multiprocessor NT: when a thread resumes on a different CPU while its values
+  are still in another CPU's registers, the new CPU sends an NMI through the
+  local APIC. The other CPU's NMI hook stores the values and releases them.
+  Nobody waits while holding the table lock, and a waiting CPU serves requests
+  addressed to itself, so CPUs cannot block each other. A real NMI still goes
+  to the OS handler (task gate or interrupt gate).
+- Thread state slots: 1024 (XMM) or 384 (XSAVE) per system, taken from
+  non-paged pool or the VMM heap. They are released on thread exit
+  (PsSetCreateThreadNotifyRoutine on NT 4.0+, Destroy_Thread on 9x). Without
+  a notification (NT 3.1/3.5x), the least recently used slot that is not
+  loaded in a CPU is reused.
+- Status: NT publishes a CG_STATUS block in the VOLATILE key
+  HKLM\SYSTEM\CurrentControlSet\Services\winsimd\Runtime (values Guard,
+  GuardFlags, GuardComponents, GuardReason, Version). The key disappears at
+  shutdown, so a stale value can never claim protection. 9x:
+  DeviceIoControl(\\.\WINSIMD, 2) returns the same block. WINSINFO shows the
+  preserved register files. The guard can be turned off with
+  ContextGuard=0 (REG_DWORD) in the service key.
+- amd64 (XP x64 / Server 2003 x64): the kernel saves XMM/MXCSR itself (eager
+  fxsave/fxrstor in SwapContext) but not the YMM upper halves. Because the FPU
+  is switched eagerly there is no #NM trap, so the amd64 guard preserves
+  YMM0-7 upper halves by hooking SwapContext directly (src/guardx64.c):
+  * the kernel base is found from WINSIMD's own DbgPrint import and the
+    SwapContext site from a unique byte signature, used only if it occurs
+    exactly once - no fixed address, RVA, build stamp or KPRCB offset; per-CPU
+    identity is the KPRCB pointer, registered on first sight;
+  * the 14-byte absolute-jmp hook is installed under KeIpiGenericCall;
+  * slots are freed on thread exit (PsSetCreateThreadNotifyRoutine); the hot
+    path makes no kernel calls;
+  * it guards YMM only, not AVX-512 ZMM/opmask.
+  PatchGuard: XP x64 / 2003 SP1 hash-check the kernel's code and bugcheck
+  (0x109) on any SwapContext patch. To be safe the hook is installed ONLY when
+  PatchGuard is genuinely disabled - a kernel debugger attached
+  (KdDebuggerEnabled=1 and KdDebuggerNotPresent=0). On a normal boot the guard
+  detects PatchGuard is active, touches nothing, and reports GuardReason
+  CG_PATCHGUARD, so WINSIMD never bugchecks the machine. SSE/XMM apps (the
+  Flash Player ports included) need no guard on XP x64. AvxPolicy still applies.
 
-New in this release
-- Transparent per-thread preservation of the vector register state the OS does
-  not keep across context switches and CPU migration, so SSE and AVX code can
-  run concurrently on old Windows. Two kernel families are supported and
-  verified:
-    * NT 3.1 (UP + MP, x86): the scheduler saves no SIMD state, so the guard
-      owns the whole register file (XMM + MXCSR, and YMM upper on AVX).
-    * Windows 2000 / NT 5.0 (UP + MP, x86): the scheduler already preserves XMM
-      + MXCSR, so the guard keeps ONLY the YMM upper halves ("upper-only" mode)
-      and leaves the OS's XMM state untouched.
-- Generic kernel discovery: the guard locates the running kernel and scans its
-  image for the unique context-switch-count instruction bytes of a known layout
-  instead of hard-coding a kernel timestamp or image base. It hooks only on an
-  exactly-once match and refuses cleanly (no patch, no crash) otherwise. Adding
-  an OS is adding one validated row.
-- Per-CPU outgoing-thread tracking: the hook needs only the incoming-thread
-  register (the outgoing thread is the one each CPU last switched to, tracked by
-  the guard). This is what makes NT 5.0 hookable, where the outgoing-thread
-  register has already been reused by the context-switch-count increment.
-- Multi-instruction displacement: when the hooked increment is shorter than the
-  5-byte jmp (NT 5.0's is 3 bytes), the following instruction is displaced too
-  and re-executed from the generated trampoline.
-- Added VTEST.EXE (installs + starts the guard, then runs the migration test)
-  and WTEST.EXE (same workload without the guard, to measure native OS behavior).
-- Host-only toolchain (clang-18 / lld-link / llvm-dlltool / nasm); no MinGW
-  sysroot. scripts/build_guard_generic.sh, build_vtest.sh, build_wtest.sh.
+Installer (WINSIMD.EXE)
+- GUI by default: a Yes/No confirmation, a self-drawn progress bar (works on
+  NT 3.1, which has no comctl32), and a "completed" message box.
+- /silent installs with no UI and prints "completed." to the console.
+- /remove uninstalls WINSIMD if present (GUI, or /silent for console only).
+- Console start-type/policy/control flags (/auto /system /boot /demand /safe
+  /avx start stop) are unchanged.
 
-Verification (QEMU, test/results/)
-- NT 3.1 MP (ntkrnlmp + MP HAL), 4 CPUs: guard installed via runtime scan
-  (width=1 mode=0 site=0x604b0 cpus=4); 4-worker migration test ran hundreds of
-  XMM and YMM affinity rounds with zero XMM / YMM / MXCSR / x87 mismatches.
-- Windows 2000, 2 CPUs: without the guard the AVX phase leaked YMM state (895
-  mismatches); with the guard (width=1 mode=1 site=0x66df3 cpus=2) YMM
-  mismatches dropped to 0 and XMM stayed 0.
-- Guard refusal verified safe: the NT 3.1 context-switch bytes do not occur in
-  the Windows 2000 or XP x64 kernels, so the guard refuses there without
-  patching.
+Fixes
+- Installer: the stale "'ilfinst start' to load now" hint is gone; it now
+  prints "Restart Windows to load the driver.".
+- CR4 is per processor: ilf_apply_policy now starts from the running CPU's
+  CR4. Before, every CPU after the first received the boot CPU's updated copy,
+  the write looked unnecessary, and SSE stayed off on application processors
+  (#UD on the second CPU).
+- NT 3.1/3.5x multiprocessor: these kernels export no KeSetSystemAffinityThread,
+  so 1.1 programmed only the boot CPU. CPUs are now reached with
+  NtSetInformationThread(ThreadAffinityMask), and the driver waits until the
+  thread really runs on the target CPU (KPRCB SetMember).
+- Thread slots are zero-filled at start: XRSTOR raises #GP when the reserved
+  bytes of an XSAVE header are not zero, and XSAVE does not write them (seen
+  as STOP 0x7F/0xD on Windows 2000 with AVX before the fix).
+- The guard clears CR0.EM as well as CR0.TS around its own register accesses
+  (the NT 3.1 MP kernel keeps EM set while no thread owns the FPU).
 
-Fixed
-- Driver kernel imports (DbgPrint, MmIsAddressValid, KeBugCheckEx) are now
-  emitted with undecorated names so the NT loader resolves them against
-  ntoskrnl's stdcall exports; the earlier decorated "<name>@N" import names made
-  StartService fail with ERROR_PROC_NOT_FOUND (127).
+Verified in QEMU (60-second stress tests; counts are failed register checks)
+- NT 3.1 UP, XMMSTRS (3 threads):        1.1: about 680 per thread, 1.2: 0
+- NT 3.1 UP, AVX CPU, YMMSTRS (3 threads): 1.1: about 680 per thread, 1.2: 0
+- Windows 95 RTM, XMMSTRS (3 threads):    1.1: about 700 per thread, 1.2: 0
+- NT 3.1 MP (2 CPUs, NTCPUPAE kernel), XMMSTR6 (6 threads): 1.2: 16679 and
+  21064 checks in two runs, 0 failures. In the instrumented run, cross-CPU
+  transfers occurred and every one was served by the flush NMI. With 1.1
+  the test cannot run there (SSE is off on CPU 1).
+- Flash Player 32 + Super Mario 63 ran for 4 minutes of random input on
+  NT 3.1 with 2 CPUs and WINSIMD 1.2, without a fault.
+- NT 4.0 UP, XMMSTR6 (6 threads): 9901 checks, 0 failures.
+- Windows 2000 UP, AVX CPU, YMMSTRS (3 threads): 0 failures.
+- Windows 2000 MP (2 CPUs), AVX CPU, YMMSTRS (3 threads): about 5000 checks
+  per thread, 0 failures. WINSINFO shows "Registers preserved by WINSIMD: YMM".
+- Windows 95 RTM with the final VxD: XMMSTRS 3382/2592/2911 checks,
+  0 failures; WINSINFO shows "Registers preserved by WINSIMD: XMM".
+- Flash Player 32 starts and plays on NT 3.1 UP, NT 4.0 and Windows 95 with
+  WINSIMD 1.2 alone. Flash Player 10 reports SSE2 mode on Windows 95.
+- XP x64 amd64 YMM guard: with PatchGuard disabled (kernel debugger attached)
+  the SwapContext hook arms (GuardFlags = ACTIVE|YMM), the hook runs on every
+  thread switch, and the system reaches the desktop and runs stably; the
+  signature scan found SwapContext uniquely (rva 0x54c48 on 5.2.3790.1830).
+  Without that - a normal boot - the guard correctly reports CG_PATCHGUARD and
+  does not patch, and the machine is stable. (A full PatchGuard-off YMMSTRS
+  pass is prevented by PatchGuard itself, not by the guard.)
+- XP x64: both Flash Player 10 and Flash Player 32 run (OS-managed XMM; no
+  guard needed).
+- Installer verified on XP x64: GUI confirmation dialog, self-drawn progress
+  bar and "completed" message box; /silent installs with no UI and prints
+  "completed."; /remove deletes the service and driver file and reports it.
+Not verified: NT 3.5x (the available image does not boot in this QEMU),
+Windows 98 first edition, AVX-512 hardware, real (non-emulated)
+multiprocessor machines, more than two CPUs with 1.2, and a full YMM stress
+pass on XP x64 with PatchGuard disabled on real hardware.
 
-Known limits
-- ZMM / opmask (AVX-512) save-restore code is present but was not verified on
-  AVX-512 hardware.
-- x86 only. Windows XP x64 / Server 2003 x64 would need a 64-bit build of the
-  upper-only approach, but x64 Windows ships Kernel Patch Protection
-  (PatchGuard), which bugchecks (0x109) on a patched SwapContext; a 64-bit guard
-  is only usable with PatchGuard disabled. Windows 9x has no NT scheduler and
-  needs a separate VxD-level thread-switch hook.
-- Demand-load only, no unload path; reboot before replacing. The 512-entry
-  thread table is bounded and bugchecks (0xE0120001) on exhaustion rather than
-  substituting state.
+Known issue (test environment)
+- With an artificial QEMU CPU model (pentium3 + xsave + avx, level=13) the
+  CR4.OSXSAVE write never returns, in 1.1 as in 1.2, and NT 3.1 hangs. With
+  QEMU "-cpu max" and real AVX CPUs this does not occur.
 
-Version 1.1
+Version 1.2 - development checkpoint, 2026-11-01 (superseded by 1.2 above)
 
-- Default auto-start service registration and active-CPU affinity masking so the
-  driver programs every online CPU on NT 3.51 multiprocessor systems (issue #1).
-- AvxPolicy registry flag (safe mode) to keep AVX disabled so applications fall
-  back to SSE when desired.
-
-Version 1.0
-
-- Initial release: enable CR4/XCR0 SIMD state bits on every logical processor
-  across legacy Windows (NT x86/x64 and Windows 9x via VxD).
+- Added exact-kernel NT 3.1 UP/MP XMM0-XMM7 and MXCSR preservation research code.
+- Added four-worker preemption and verified native-NT affinity migration tests.
+- Verified a four-CPU run with 342 affinity rounds and zero XMM/MXCSR/x87 errors.
+- Fixed NT 3.1 CPU-coverage diagnostics to use the KPRCB affinity mask; all four
+  CPUs are now observed (mask 0xF).
+- Passed 640 worker lifetimes with zero errors; observed 647 retired slots
+  including test/control threads, with a peak of 41 active slots.
+- Verified the current driver and loader after a clean UP reboot: four workers,
+  zero XMM/MXCSR/x87 mismatches.
+- Refused replacement of an already-running research driver in LOADXMM.
+- Retained the bounded 512-entry table and exact-kernel checks; production
+  installation rendezvous and broader OS integration remain unfinished.
+- YMM and ZMM context preservation is not implemented. This is not an AVX or
+  AVX-512 concurrency fix, and it is not a universal WINSIMD 1.2 release.
